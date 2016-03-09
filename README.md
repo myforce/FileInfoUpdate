@@ -1,3 +1,5 @@
+# FileInfoUpdate
+
 ### Purpose
 * Read or update PE (EXE/DLL/OCX/...) version information
 * Limitation: The updated strings cannot be bigger than the existing information
