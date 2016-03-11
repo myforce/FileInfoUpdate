@@ -15,6 +15,7 @@
 #pragma comment(lib, "version.lib")
 
 bool ParseVersion(LPTSTR & szVersion, WORD(&arrVersion)[4]);
+BOOL CALLBACK EnumLanguages(HMODULE  hModule, LPCTSTR  lpszType, LPCTSTR  lpszName, WORD     wIDLanguage, LONG_PTR lParam);
 
 int _tmain(int argc, _TCHAR* argv[])
 {
@@ -92,6 +93,29 @@ int _tmain(int argc, _TCHAR* argv[])
 		}
 	}
 
+	//look for the modification time
+	FILETIME ftLastAccessTime = { 0 }, ftLastWriteTime = { 0 };
+	HANDLE hFile = CreateFile(szVersionFile, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hFile != INVALID_HANDLE_VALUE)
+	{
+		::GetFileTime(hFile, NULL, &ftLastAccessTime, &ftLastWriteTime);
+		::CloseHandle(hFile);
+	}
+
+	//determine the language for the version-info block
+	WORD dwVersionResourceLanguage = LANG_NEUTRAL;
+	HMODULE hModule = LoadLibrary(szVersionFile);
+	if (hModule)
+	{
+		std::list<WORD> lstLanguages;
+		if (::EnumResourceLanguages(hModule, RT_VERSION, MAKEINTRESOURCE(VS_VERSION_INFO), &EnumLanguages, (LONG_PTR)&lstLanguages))
+		{
+			if (lstLanguages.size() > 0)
+				dwVersionResourceLanguage = lstLanguages.front();
+		}
+		FreeLibrary(hModule);
+		hModule = NULL;
+	}
 
 	//look for file info block
 	DWORD dwHandle = NULL;
@@ -100,15 +124,19 @@ int _tmain(int argc, _TCHAR* argv[])
 	{
 		//error
 		_ftprintf_s(stderr, _T("Failed to read file info for '%s': Error %d"), szVersionFile, ::GetLastError());
+
+		//abort
 		return 4;
 	}
 	LPBYTE lpBuffer = new BYTE[dwSize];
-	if (!GetFileVersionInfo(szVersionFile, 0, dwSize, lpBuffer))
+	ZeroMemory(lpBuffer, dwSize);
+	if (!GetFileVersionInfo(szVersionFile, dwHandle, dwSize, lpBuffer))
 	{
-		delete[] lpBuffer;
-
 		//error
 		_ftprintf_s(stderr, _T("Failed to read file info for '%s': Error %d"), szVersionFile, ::GetLastError());
+
+		//abort
+		delete[] lpBuffer;
 		return 5;
 	}
 
@@ -119,6 +147,9 @@ int _tmain(int argc, _TCHAR* argv[])
 	{
 		//error
 		_ftprintf_s(stderr, _T("Failed to read fixed version info"));
+
+		//abort
+		delete[] lpBuffer;
 		return 6;
 	}
 
@@ -128,10 +159,11 @@ int _tmain(int argc, _TCHAR* argv[])
 	LPCTSTR szSubBlockTranslation = _T("\\VarFileInfo\\Translation");
 	if (!VerQueryValue(lpBuffer, (LPTSTR)szSubBlockTranslation, (LPVOID*)&pdwLangages, &uSize))
 	{
-		delete[] lpBuffer;
-
 		//error
 		_ftprintf_s(stderr, _T("Failed to read translations: Error %d."), ::GetLastError());
+
+		//abort
+		delete[] lpBuffer;
 		return 7;
 	}
 
@@ -224,7 +256,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		}
 	}
 
-	//update data in every language, or in the language specified
+	//update data in every language
 	TCHAR szLanguage[9] = { 0 };
 	LPTSTR pValueBuffer;
 	TCHAR szSubBlock[STRING_MAX_PATH] = { 0 };
@@ -243,49 +275,64 @@ int _tmain(int argc, _TCHAR* argv[])
 			_stprintf_s(szSubBlock, STRING_MAX_PATH, _T("\\StringFileInfo\\%s\\%s"), szLanguage, szString);
 			if (!VerQueryValue(lpBuffer, (LPTSTR)szSubBlock, (LPVOID*)&pValueBuffer, &uSize))
 			{
-				delete[] lpBuffer;
-
 				//error
 				_ftprintf_s(stderr, _T("Failed to set string '%s' to '%s' - string doesn't exist in file info."), szString, szStringValue);
+
+				//abort
+				delete[] lpBuffer;
 				return 8;
 			}
 
-			ZeroMemory(pValueBuffer, _tcslen(pValueBuffer) * sizeof(TCHAR));
-			if (uSize < _tcslen(szStringValue) + 1)
+			ZeroMemory(pValueBuffer, uSize * sizeof(TCHAR));
+			UINT uSizeRequired = _tcslen(szStringValue) + 1;
+			if (uSize < uSizeRequired)
 			{
-				delete[] lpBuffer;
-
 				//error
 				_ftprintf_s(stderr, _T("Failed to set string '%s' to '%s' - maximum length: %d, necessary length: %d."), szString, szStringValue, uSize - 1, _tcslen(szStringValue));
+
+				//abort
+				delete[] lpBuffer;
 				return 9;
 			}
-			_tcscpy_s(pValueBuffer, uSize, szStringValue);
-	}
+			_tcscpy_s(pValueBuffer, uSizeRequired, szStringValue);
+		}
 	}
 
 	//update file with new info
 	HANDLE hUpdate = BeginUpdateResource(szVersionFile, FALSE);
 	if (!hUpdate)
 	{
-		delete[] lpBuffer;
-
 		//error
 		_ftprintf_s(stderr, _T("Failed to update resources for '%s': Error %d."), szVersionFile, ::GetLastError());
+
+		//abort
+		delete[] lpBuffer;
 		return 10;
 	}
-	if (!UpdateResource(hUpdate, RT_VERSION, MAKEINTRESOURCE(VS_VERSION_INFO), LANG_NEUTRAL, lpBuffer, dwSize))
+	if (!UpdateResource(hUpdate, RT_VERSION, MAKEINTRESOURCE(VS_VERSION_INFO), dwVersionResourceLanguage, lpBuffer, dwSize))
 	{
-		delete[] lpBuffer;
-
 		//error
 		_ftprintf_s(stderr, _T("Failed to update resources for '%s': Error %d."), szVersionFile, ::GetLastError());
+
+		//abort
+		EndUpdateResource(hUpdate, TRUE);
+		delete[] lpBuffer;
 		return 11;
 	}
 	EndUpdateResource(hUpdate, FALSE);
 
+	//restore last modification time
+	hFile = CreateFile(szVersionFile, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hFile != INVALID_HANDLE_VALUE)
+	{
+		::SetFileTime(hFile, NULL, &ftLastAccessTime, &ftLastWriteTime);
+		::CloseHandle(hFile);
+	}
+
 	//done!
-	delete[] lpBuffer;
 	_ftprintf_s(stdout, _T("Done"));
+
+	delete[] lpBuffer;
 	return 0;
 }
 
@@ -308,4 +355,12 @@ bool ParseVersion(LPTSTR & szVersion, WORD(&arrVersion)[4])
 	}
 	szVersion = NULL;
 	return true;
+}
+
+BOOL CALLBACK EnumLanguages(HMODULE hModule, LPCTSTR lpszType, LPCTSTR lpszName, WORD wIDLanguage, LONG_PTR lParam)
+{
+	std::list<WORD> * plstLanguages = reinterpret_cast<std::list<WORD>*>(lParam);
+	if (plstLanguages)// && wIDLanguage > 0)
+		plstLanguages->push_back(wIDLanguage);
+	return TRUE;
 }
