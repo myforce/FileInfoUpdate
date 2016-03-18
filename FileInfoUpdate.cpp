@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <map>
 #include <list>
+#include <Shlwapi.h>
+
+#pragma comment(lib, "Shlwapi.lib")
 
 #define STRING_MAX       256
 #define STRING_MAX_PATH  STRING_MAX + 25 // \StringFileInfo\000004b0\<string>
@@ -16,6 +19,7 @@
 
 bool ParseVersion(LPTSTR & szVersion, WORD(&arrVersion)[4]);
 BOOL CALLBACK EnumLanguages(HMODULE  hModule, LPCTSTR  lpszType, LPCTSTR  lpszName, WORD     wIDLanguage, LONG_PTR lParam);
+int RunExternalProcessAndGetExitCode(LPTSTR szCommandLine);
 
 int _tmain(int argc, _TCHAR* argv[])
 {
@@ -35,6 +39,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			_T("\t/fv <fileversion> : set file version\r\n")
 			_T("\t/pv <productversion> : set product version\r\n")
 			_T("\t/s  <name> <value> : set string value")
+			_T("\vl : get versioninfo language code")
 			_T("when calling without arguments, the full version info will be returned in RC format");
 		_ftprintf_s(stdout, szUsage, __targv[0]);
 		return 0;
@@ -53,6 +58,25 @@ int _tmain(int argc, _TCHAR* argv[])
 		//no read/write access
 		_ftprintf_s(stderr, _T("Access to '%s' is denied"), szVersionFile);
 		return 2;
+	}
+
+	if (__argc == 3 && _tcscmp(__targv[2], _T("/vl")) == 0)
+	{
+		//special case: retrieve version-info language
+		HMODULE hModule = LoadLibrary(szVersionFile);
+		if (!hModule)
+			return -1;
+
+		WORD wLanguage = 0;
+		std::list<WORD> lstLanguages;
+		if (::EnumResourceLanguages(hModule, RT_VERSION, MAKEINTRESOURCE(VS_VERSION_INFO), &EnumLanguages, (LONG_PTR)&lstLanguages))
+		{
+			if (lstLanguages.size() > 0)
+				wLanguage = lstLanguages.front();
+		}
+		FreeLibrary(hModule);
+
+		return (int)wLanguage;
 	}
 
 	bool bDumpRC = (__argc == 2);
@@ -103,18 +127,40 @@ int _tmain(int argc, _TCHAR* argv[])
 	}
 
 	//determine the language for the version-info block
-	WORD dwVersionResourceLanguage = LANG_NEUTRAL;
-	HMODULE hModule = LoadLibrary(szVersionFile);
-	if (hModule)
+	// try 32 and 64 bit
+	WORD wVersionResourceLanguage = LANG_NEUTRAL;
+	
+	TCHAR szProcessFileName[MAX_PATH] = { 0 };
+	_tcscpy_s(szProcessFileName, MAX_PATH, __targv[0]);
+	::PathRemoveExtension(szProcessFileName);
+	LPCTSTR szProcessFileNameEnd = szProcessFileName + (_tcslen(szProcessFileName) - 2);
+	if (_tcscmp(szProcessFileNameEnd, _T("32")) == 0 || _tcscmp(szProcessFileNameEnd, _T("64")) == 0)
 	{
-		std::list<WORD> lstLanguages;
-		if (::EnumResourceLanguages(hModule, RT_VERSION, MAKEINTRESOURCE(VS_VERSION_INFO), &EnumLanguages, (LONG_PTR)&lstLanguages))
+		//file ends on 32 or 64, try xxx32.exe and xxx64.exe
+		TCHAR szCommandLine[MAX_PATH] = { 0 };
+		_stprintf_s(szCommandLine, MAX_PATH, _T("\"%s32.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
+		int nLang = RunExternalProcessAndGetExitCode(szCommandLine);
+		if (nLang <= 0)
 		{
-			if (lstLanguages.size() > 0)
-				dwVersionResourceLanguage = lstLanguages.front();
+			_stprintf_s(szCommandLine, MAX_PATH, _T("\"%s64.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
+			nLang = RunExternalProcessAndGetExitCode(szCommandLine);
+			if (nLang > 0)
+				wVersionResourceLanguage = (WORD)nLang;
 		}
-		FreeLibrary(hModule);
-		hModule = NULL;
+	}
+	else
+	{
+		//file doesn't end on 32 or 64, try xxx.exe and xxx64.exe
+		TCHAR szCommandLine[MAX_PATH] = { 0 };
+		_stprintf_s(szCommandLine, MAX_PATH, _T("\"%s.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
+		int nLang = RunExternalProcessAndGetExitCode(szCommandLine);
+		if (nLang <= 0)
+		{
+			_stprintf_s(szCommandLine, MAX_PATH, _T("\"%s64.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
+			nLang = RunExternalProcessAndGetExitCode(szCommandLine);
+			if (nLang > 0)
+				wVersionResourceLanguage = (WORD)nLang;
+		}
 	}
 
 	//look for file info block
@@ -284,7 +330,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			}
 
 			ZeroMemory(pValueBuffer, uSize * sizeof(TCHAR));
-			UINT uSizeRequired = _tcslen(szStringValue) + 1;
+			size_t uSizeRequired = _tcslen(szStringValue) + 1;
 			if (uSize < uSizeRequired)
 			{
 				//error
@@ -309,7 +355,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		delete[] lpBuffer;
 		return 10;
 	}
-	if (!UpdateResource(hUpdate, RT_VERSION, MAKEINTRESOURCE(VS_VERSION_INFO), dwVersionResourceLanguage, lpBuffer, dwSize))
+	if (!UpdateResource(hUpdate, RT_VERSION, MAKEINTRESOURCE(VS_VERSION_INFO), wVersionResourceLanguage, lpBuffer, dwSize))
 	{
 		//error
 		_ftprintf_s(stderr, _T("Failed to update resources for '%s': Error %d."), szVersionFile, ::GetLastError());
@@ -319,7 +365,15 @@ int _tmain(int argc, _TCHAR* argv[])
 		delete[] lpBuffer;
 		return 11;
 	}
-	EndUpdateResource(hUpdate, FALSE);
+	if (!EndUpdateResource(hUpdate, FALSE))
+	{
+		//error
+		_ftprintf_s(stderr, _T("Failed to commit update resources for '%s': Error %d."), szVersionFile, ::GetLastError());
+
+		//abort
+		delete[] lpBuffer;
+		return 12;
+	}
 
 	//restore last modification time
 	hFile = CreateFile(szVersionFile, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -330,7 +384,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	}
 
 	//done!
-	_ftprintf_s(stdout, _T("Done"));
+	_ftprintf_s(stdout, _T("Done\r\n"));
 
 	delete[] lpBuffer;
 	return 0;
@@ -363,4 +417,34 @@ BOOL CALLBACK EnumLanguages(HMODULE hModule, LPCTSTR lpszType, LPCTSTR lpszName,
 	if (plstLanguages)// && wIDLanguage > 0)
 		plstLanguages->push_back(wIDLanguage);
 	return TRUE;
+}
+
+int RunExternalProcessAndGetExitCode(LPTSTR szCommandLine)
+{
+	//start process
+	STARTUPINFO si = { 0 };
+	si.wShowWindow = SW_HIDE;
+	PROCESS_INFORMATION pi = { 0 };
+	if (!CreateProcess(NULL, szCommandLine, NULL, NULL, TRUE, CREATE_DEFAULT_ERROR_MODE | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+		return -1;
+	CloseHandle(pi.hThread);
+
+	//wait until process closed
+	if (WAIT_OBJECT_0 != WaitForSingleObject(pi.hProcess, 60000))
+	{
+		CloseHandle(pi.hProcess);
+		return -2;
+	}
+
+	//get exit code
+	DWORD dwExitCode = 0;
+	if (!GetExitCodeProcess(pi.hProcess, &dwExitCode))
+	{
+		CloseHandle(pi.hProcess);
+		return -3;
+	}
+
+	//done
+	CloseHandle(pi.hProcess);
+	return (int)dwExitCode;
 }
