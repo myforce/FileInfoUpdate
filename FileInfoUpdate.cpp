@@ -63,6 +63,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	if (__argc == 3 && _tcscmp(__targv[2], _T("/vl")) == 0)
 	{
 		//special case: retrieve version-info language
+		::SetErrorMode(SEM_NOOPENFILEERRORBOX | SEM_FAILCRITICALERRORS);
+
 		HMODULE hModule = LoadLibrary(szVersionFile);
 		if (!hModule)
 			return -1;
