@@ -8,6 +8,7 @@
 #include <map>
 #include <list>
 #include <Shlwapi.h>
+#include <intsafe.h>
 
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -38,6 +39,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			_T("possible arguments:\r\n")
 			_T("\t/fv <fileversion> : set file version\r\n")
 			_T("\t/pv <productversion> : set product version\r\n")
+			_T("\t/ff [+/-]<file flags> : set file flags\r\n")
 			_T("\t/s  <name> <value> : set string value")
 			_T("\vl : get versioninfo language code")
 			_T("when calling without arguments, the full version info will be returned in RC format");
@@ -84,6 +86,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	bool bDumpRC = (__argc == 2);
 	LPTSTR szNewFileVersion = NULL;
 	LPTSTR szNewProductVersion = NULL;
+	DWORD dwAddFileFlags = 0, dwRemoveFileFlags = 0;
 	std::map<LPCTSTR, LPCTSTR> mapNewStringValues;
 
 	int nParameter = 1;
@@ -115,6 +118,33 @@ int _tmain(int argc, _TCHAR* argv[])
 				//error
 				_ftprintf_s(stderr, _T("Impossible to set string '%s' - maximum length: %d, necessary length: %d."), szString, STRING_MAX, _tcslen(szString));
 				return 3;
+			}
+		}
+		if (_tcscmp(__targv[nParameter], _T("/ff")) == 0)
+		{
+			if (nParameter++ >= __argc)
+				break;
+			TCHAR* szUpdate = __targv[nParameter];
+			if (_tcslen(szUpdate) < 1
+				|| ((*szUpdate == _T('+') || *szUpdate == _T('-')) && _tcslen(szUpdate) < 2))
+			{
+				//error
+				_ftprintf_s(stderr, _T("Invalid data for /ff: %s"), szUpdate);
+				return 3;
+			}
+			if (*szUpdate == _T('+'))
+			{
+				dwAddFileFlags |= _ttol(szUpdate + 1);
+				dwRemoveFileFlags = 0;
+			}
+			else if (*szUpdate == _T('-'))
+			{
+				dwRemoveFileFlags |= _ttol(szUpdate + 1);
+			}
+			else
+			{
+				dwAddFileFlags = _ttol(szUpdate);
+				dwRemoveFileFlags = DWORD_MAX;
 			}
 		}
 	}
@@ -301,6 +331,11 @@ int _tmain(int argc, _TCHAR* argv[])
 		{
 			pFixedInfo->dwProductVersionMS = MAKELONG(arrProductVersion[1], arrProductVersion[0]);
 			pFixedInfo->dwProductVersionLS = MAKELONG(arrProductVersion[3], arrProductVersion[2]);
+		}
+		if (dwAddFileFlags != 0 || dwRemoveFileFlags != 0)
+		{
+			pFixedInfo->dwFileFlags &= ~dwRemoveFileFlags;
+			pFixedInfo->dwFileFlags |= dwAddFileFlags;
 		}
 	}
 
