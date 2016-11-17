@@ -332,11 +332,11 @@ int _tmain(int argc, _TCHAR* argv[])
 			pFixedInfo->dwProductVersionMS = MAKELONG(arrProductVersion[1], arrProductVersion[0]);
 			pFixedInfo->dwProductVersionLS = MAKELONG(arrProductVersion[3], arrProductVersion[2]);
 		}
-		if (dwAddFileFlags != 0 || dwRemoveFileFlags != 0)
-		{
-			pFixedInfo->dwFileFlags &= ~dwRemoveFileFlags;
-			pFixedInfo->dwFileFlags |= dwAddFileFlags;
-		}
+	}
+	if (dwAddFileFlags != 0 || dwRemoveFileFlags != 0)
+	{
+		pFixedInfo->dwFileFlags &= ~dwRemoveFileFlags;
+		pFixedInfo->dwFileFlags |= dwAddFileFlags;
 	}
 
 	//update data in every language
