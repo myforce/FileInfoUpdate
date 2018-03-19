@@ -33,5 +33,6 @@ Update version information strings
 | 7    | Failed to read translations |
 | 8    | Failed to set version information string, string doesn't exist in original version information |
 | 9    | Failed to set version information string, string in original version information is too short |
-| 10   | Failed to update resources  |
+| 10   | Failed to start update resources  |
 | 11   | Failed to update resources  |
+| 12   | Failed to commit resources  |
