@@ -169,12 +169,12 @@ int _tmain(int argc, _TCHAR* argv[])
 	if (_tcscmp(szProcessFileNameEnd, _T("32")) == 0 || _tcscmp(szProcessFileNameEnd, _T("64")) == 0)
 	{
 		//file ends on 32 or 64, try xxx32.exe and xxx64.exe
-		TCHAR szCommandLine[MAX_PATH] = { 0 };
-		_stprintf_s(szCommandLine, MAX_PATH, _T("\"%s32.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
+		TCHAR szCommandLine[1000] = { 0 };
+		_stprintf_s(szCommandLine, 1000, _T("\"%s32.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
 		int nLang = RunExternalProcessAndGetExitCode(szCommandLine);
 		if (nLang <= 0)
 		{
-			_stprintf_s(szCommandLine, MAX_PATH, _T("\"%s64.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
+			_stprintf_s(szCommandLine, 1000, _T("\"%s64.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
 			nLang = RunExternalProcessAndGetExitCode(szCommandLine);
 			if (nLang > 0)
 				wVersionResourceLanguage = (WORD)nLang;
@@ -183,12 +183,12 @@ int _tmain(int argc, _TCHAR* argv[])
 	else
 	{
 		//file doesn't end on 32 or 64, try xxx.exe and xxx64.exe
-		TCHAR szCommandLine[MAX_PATH] = { 0 };
-		_stprintf_s(szCommandLine, MAX_PATH, _T("\"%s.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
+		TCHAR szCommandLine[1000] = { 0 };
+		_stprintf_s(szCommandLine, 1000, _T("\"%s.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
 		int nLang = RunExternalProcessAndGetExitCode(szCommandLine);
 		if (nLang <= 0)
 		{
-			_stprintf_s(szCommandLine, MAX_PATH, _T("\"%s64.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
+			_stprintf_s(szCommandLine, 1000, _T("\"%s64.exe\" \"%s\" /vl"), szProcessFileName, szVersionFile);
 			nLang = RunExternalProcessAndGetExitCode(szCommandLine);
 			if (nLang > 0)
 				wVersionResourceLanguage = (WORD)nLang;
