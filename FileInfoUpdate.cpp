@@ -31,27 +31,20 @@ int _tmain(int argc, _TCHAR* argv[])
 	//		/s  <name> <value>
 
 	//parse input
-	if (__argc <= 1)
+	if (__argc < 2)
 	{
 		//print usage info
-		LPTSTR szUsage = 
+		LPTSTR szUsage =
 			_T("usage: %s <file> [arguments]\r\n")
 			_T("possible arguments:\r\n")
 			_T("\t/fv <fileversion> : set file version\r\n")
 			_T("\t/pv <productversion> : set product version\r\n")
-			_T("\t/ff [+/-]<file flags> : set file flags\r\n")
-			_T("\t/s  <name> <value> : set string value")
-			_T("\vl : get versioninfo language code")
+			_T("\t/ff [+/-]<file flags> : set file flags (1=debug, 2=pre-release, 4=patched, 8=private build, 16=info inferred, 32=special build)\r\n")
+			_T("\t/s  <name> <value> : set string value\r\n")
+			_T("\t/vl : get versioninfo language code\r\n")
 			_T("when calling without arguments, the full version info will be returned in RC format");
 		_ftprintf_s(stdout, szUsage, __targv[0]);
 		return 0;
-	}
-
-	if (__argc < 2)
-	{
-		//invalid command
-		_ftprintf_s(stderr, _T("Invalid command"));
-		return 1;
 	}
 
 	LPCTSTR szVersionFile = __targv[1];
